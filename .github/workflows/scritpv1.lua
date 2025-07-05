@@ -137,7 +137,10 @@ local function showProperties(obj)
 	end
 end
 
--- Mostrar lista de RemoteEvents para seleccionar
+-- Tabla para contar llamadas de cada RemoteEvent
+local remoteCallsCount = {}
+
+-- Mostrar lista de RemoteEvents para seleccionar, con contador
 local function showRemoteEventsList()
 	clearContent()
 
@@ -162,6 +165,9 @@ local function showRemoteEventsList()
 	for _, inst in ipairs(game:GetDescendants()) do
 		if inst:IsA("RemoteEvent") then
 			table.insert(remotes, inst)
+			if not remoteCallsCount[inst] then
+				remoteCallsCount[inst] = 0
+			end
 		end
 	end
 
@@ -178,8 +184,10 @@ local function showRemoteEventsList()
 		return
 	end
 
-	-- Crear botones para cada RemoteEvent
+	-- Crear botones para cada RemoteEvent con contador de llamadas
 	for i, remote in ipairs(remotes) do
+		local count = remoteCallsCount[remote] or 0
+
 		local btn = Instance.new("TextButton")
 		btn.Size = UDim2.new(1, -10, 0, 28)
 		btn.TextColor3 = green
@@ -187,7 +195,7 @@ local function showRemoteEventsList()
 		btn.Font = Enum.Font.Code
 		btn.TextSize = 18
 		btn.TextXAlignment = Enum.TextXAlignment.Left
-		btn.Text = "[".. remote.ClassName .."] " .. remote.Name
+		btn.Text = "["..count.."] ".. "[".. remote.ClassName .."] " .. remote.Name
 		btn.AutoButtonColor = false
 		btn.Parent = scroll
 
@@ -204,6 +212,25 @@ local function showRemoteEventsList()
 		end)
 	end
 end
+
+-- **Listener para contar llamadas de RemoteEvents**
+
+-- Funcion para enganchar a todos los RemoteEvents y contar llamadas
+local function hookRemoteEvents()
+	for _, remote in ipairs(game:GetDescendants()) do
+		if remote:IsA("RemoteEvent") then
+			if not remoteCallsCount[remote] then
+				remoteCallsCount[remote] = 0
+				-- Interceptar llamadas al RemoteEvent para contar
+				remote.OnClientEvent:Connect(function(...)
+					remoteCallsCount[remote] = remoteCallsCount[remote] + 1
+				end)
+			end
+		end
+	end
+end
+
+hookRemoteEvents()
 
 -- Mostrar menú principal
 local function showMainMenu()
