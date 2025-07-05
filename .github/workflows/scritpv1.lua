@@ -58,8 +58,16 @@ contentFrame.Parent = frame
 -- Navegación stack
 local navStack = {}
 
--- Registro de listeners para RemoteEvents
+-- Registro de listeners para RemoteEvents específicos
 local activeListeners = {}
+
+-- Variables para listener global
+local globalListenerActive = false
+local globalConnections = {}
+local globalRemoteCounters = {}
+local globalDescendantConn = nil
+local globalScroll = nil
+local globalContentFrame = nil
 
 local function clearContent()
 	for _, child in pairs(contentFrame:GetChildren()) do
@@ -135,7 +143,6 @@ local function showProperties(obj)
 		appendLine(scroll, prop .. ": " .. (success and tostring(value) or "[no accesible]"))
 	end
 
-	-- Si es RemoteEvent, agregar sección de escucha y llamada
 	if obj:IsA("RemoteEvent") then
 		appendLine(scroll, "== RemoteEvent: Escuchando OnClientEvent ==")
 
@@ -295,6 +302,153 @@ local function showObjectContents(obj, label)
 	end
 end
 
+local function stopGlobalListener()
+	-- Desconectar todos
+	for _, conn in pairs(globalConnections) do
+		conn:Disconnect()
+	end
+	globalConnections = {}
+	globalRemoteCounters = {}
+	if globalDescendantConn then
+		globalDescendantConn:Disconnect()
+		globalDescendantConn = nil
+	end
+	globalListenerActive = false
+	globalScroll = nil
+	globalContentFrame = nil
+end
+
+local function startGlobalListener()
+	if globalListenerActive then return end
+	globalListenerActive = true
+	clearContent()
+
+	-- Botón para regresar
+	local backBtn = Instance.new("TextButton")
+	backBtn.Size = UDim2.new(1, 0, 0, 30)
+	backBtn.Text = "< Regresar"
+	backBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+	backBtn.TextColor3 = green
+	backBtn.Font = Enum.Font.Code
+	backBtn.TextSize = 18
+	backBtn.Parent = contentFrame
+	backBtn.MouseButton1Click:Connect(function()
+		stopGlobalListener()
+		if #navStack > 0 then
+			local last = table.remove(navStack)
+			last()
+		end
+	end)
+
+	-- Scroll para mostrar info
+	local scroll = createScrollContainer()
+	scroll.Parent = contentFrame
+	globalScroll = scroll
+
+	local infoLabel = Instance.new("TextLabel")
+	infoLabel.Text = "Listener Global: RemoteEvents detectados y llamadas"
+	infoLabel.Size = UDim2.new(1, -10, 0, 22)
+	infoLabel.BackgroundTransparency = 1
+	infoLabel.TextColor3 = green
+	infoLabel.Font = Enum.Font.Code
+	infoLabel.TextSize = 18
+	infoLabel.TextXAlignment = Enum.TextXAlignment.Left
+	infoLabel.Parent = scroll
+
+	-- Función para crear o actualizar contador
+	local function updateRemoteCounter(remote)
+		local key = remote:GetDebugId()
+		local name = remote:GetFullName()
+
+		if not globalRemoteCounters[remote] then
+			-- Nuevo contador
+			local counterData = {
+				count = 0,
+				label = Instance.new("TextLabel"),
+			}
+			counterData.label.Size = UDim2.new(1, -10, 0, 22)
+			counterData.label.TextColor3 = green
+			counterData.label.Font = Enum.Font.Code
+			counterData.label.BackgroundTransparency = 1
+			counterData.label.TextSize = 18
+			counterData.label.TextXAlignment = Enum.TextXAlignment.Left
+			counterData.label.Text = "[0] " .. name
+			counterData.label.Parent = scroll
+			globalRemoteCounters[remote] = counterData
+
+			-- Conectar evento OnClientEvent
+			local conn = remote.OnClientEvent:Connect(function(...)
+				counterData.count += 1
+				counterData.label.Text = "[" .. counterData.count .. "] " .. name
+			end)
+			table.insert(globalConnections, conn)
+		end
+	end
+
+	-- Detectar remotes ya existentes
+	for _, inst in pairs(game:GetDescendants()) do
+		if inst:IsA("RemoteEvent") then
+			updateRemoteCounter(inst)
+		end
+	end
+
+	-- Escuchar nuevos remotes agregados
+	globalDescendantConn = game.DescendantAdded:Connect(function(inst)
+		if inst:IsA("RemoteEvent") then
+			updateRemoteCounter(inst)
+		end
+	end)
+end
+
+local function showGlobalListenerToggle()
+	clearContent()
+
+	local backBtn = Instance.new("TextButton")
+	backBtn.Size = UDim2.new(1, 0, 0, 30)
+	backBtn.Text = "< Regresar"
+	backBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+	backBtn.TextColor3 = green
+	backBtn.Font = Enum.Font.Code
+	backBtn.TextSize = 18
+	backBtn.Parent = contentFrame
+	backBtn.MouseButton1Click:Connect(function()
+		if globalListenerActive then
+			stopGlobalListener()
+		end
+		if #navStack > 0 then
+			local last = table.remove(navStack)
+			last()
+		end
+	end)
+
+	local toggleBtn = Instance.new("TextButton")
+	toggleBtn.Size = UDim2.new(0, 200, 0, 40)
+	toggleBtn.Position = UDim2.new(0.5, -100, 0.5, -20)
+	toggleBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+	toggleBtn.TextColor3 = green
+	toggleBtn.Font = Enum.Font.Code
+	toggleBtn.TextSize = 20
+	toggleBtn.Text = globalListenerActive and "Desactivar Listener Global" or "Activar Listener Global"
+	toggleBtn.Parent = contentFrame
+
+	toggleBtn.MouseEnter:Connect(function()
+		toggleBtn.BackgroundColor3 = hover
+	end)
+	toggleBtn.MouseLeave:Connect(function()
+		toggleBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+	end)
+
+	toggleBtn.MouseButton1Click:Connect(function()
+		if globalListenerActive then
+			stopGlobalListener()
+			toggleBtn.Text = "Activar Listener Global"
+		else
+			startGlobalListener()
+			toggleBtn.Text = "Desactivar Listener Global"
+		end
+	end)
+end
+
 local function showMainMenu()
 	clearContent()
 	navStack = {}
@@ -316,8 +470,7 @@ local function showMainMenu()
 		button.TextColor3 = green
 		button.Text = "[ " .. i .. " ] " .. svc.label
 		button.Font = Enum.Font.Code
-		button.TextSize = 18
-		button.AutoButtonColor = false
+		button.TextSize = 20
 		button.Parent = contentFrame
 
 		button.MouseEnter:Connect(function()
@@ -332,6 +485,29 @@ local function showMainMenu()
 			showObjectContents(svc.ref, svc.label)
 		end)
 	end
+
+	-- Botón para listener global
+	local listenerBtn = Instance.new("TextButton")
+	listenerBtn.Size = UDim2.new(1, -20, 0, 35)
+	listenerBtn.Position = UDim2.new(0, 10, 0, #services * 40 + 10)
+	listenerBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+	listenerBtn.TextColor3 = green
+	listenerBtn.Text = "[*] Listener Global Remotes"
+	listenerBtn.Font = Enum.Font.Code
+	listenerBtn.TextSize = 20
+	listenerBtn.Parent = contentFrame
+
+	listenerBtn.MouseEnter:Connect(function()
+		listenerBtn.BackgroundColor3 = hover
+	end)
+	listenerBtn.MouseLeave:Connect(function()
+		listenerBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+	end)
+
+	listenerBtn.MouseButton1Click:Connect(function()
+		table.insert(navStack, showMainMenu)
+		showGlobalListenerToggle()
+	end)
 end
 
 showMainMenu()
