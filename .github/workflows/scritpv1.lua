@@ -423,9 +423,9 @@ local function startGlobalListener()
 
 		remoteCallsCount[remote] = 0
 
-		local conn = remote.OnServerEvent:Connect(function()
-			remoteCallsCount[remote] = remoteCallsCount[remote] + 1
-			refreshListenerScroll()
+		local conn = remote.OnClientEvent:Connect(function(...)
+		    remoteCallsCount[remote] = remoteCallsCount[remote] + 1
+		    refreshListenerScroll()
 		end)
 		remoteConnections[remote] = conn
 	end
