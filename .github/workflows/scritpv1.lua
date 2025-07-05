@@ -108,13 +108,16 @@ local function showProperties(obj)
 	clearContent()
 
 	local backBtn = Instance.new("TextButton")
-	backBtn.Size = UDim2.new(1, 0, 0, 30)
-	backBtn.Text = "< Regresar"
+	backBtn.Size = UDim2.new(0, 30, 0, 30)
+	backBtn.Position = UDim2.new(1, -35, 0, 5)
+	backBtn.Text = "←"
 	backBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 	backBtn.TextColor3 = green
 	backBtn.Font = Enum.Font.Code
 	backBtn.TextSize = 18
+	backBtn.ZIndex = 2
 	backBtn.Parent = contentFrame
+
 	backBtn.MouseButton1Click:Connect(function()
 		if #navStack > 0 then
 			local last = table.remove(navStack)
@@ -270,37 +273,77 @@ local function showObjectContents(obj, label)
 		end
 	end)
 
+	-- 🔍 Barra de búsqueda
+	local searchBox = Instance.new("TextBox")
+	searchBox.PlaceholderText = "Buscar por nombre o clase..."
+	searchBox.Size = UDim2.new(1, 0, 0, 30)
+	searchBox.Position = UDim2.new(0, 0, 0, 35)
+	searchBox.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+	searchBox.TextColor3 = green
+	searchBox.Font = Enum.Font.Code
+	searchBox.TextSize = 18
+	searchBox.ClearTextOnFocus = false
+	searchBox.Text = ""
+	searchBox.Parent = contentFrame
+
 	local scroll = createScrollContainer()
+	scroll.Position = UDim2.new(0, 0, 0, 70)
+	scroll.Size = UDim2.new(1, 0, 1, -70)
 	scroll.Parent = contentFrame
 
-	for _, child in ipairs(obj:GetChildren()) do
-		local button = Instance.new("TextButton")
-		button.Size = UDim2.new(1, -10, 0, 28)
-		button.Text = "[ " .. child.ClassName .. " ] " .. child.Name
-		button.TextColor3 = green
-		button.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-		button.Font = Enum.Font.Code
-		button.TextSize = 18
-		button.AutoButtonColor = false
-		button.Parent = scroll
-
-		button.MouseEnter:Connect(function()
-			button.BackgroundColor3 = hover
-		end)
-		button.MouseLeave:Connect(function()
-			button.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-		end)
-
-		button.MouseButton1Click:Connect(function()
-			table.insert(navStack, function() showObjectContents(obj, label) end)
-			if #child:GetChildren() > 0 then
-				showObjectContents(child, child.Name)
-			else
-				showProperties(child)
+	local function refreshList(filterText)
+		-- Elimina botones previos
+		for _, child in pairs(scroll:GetChildren()) do
+			if child:IsA("TextButton") then
+				child:Destroy()
 			end
-		end)
+		end
+
+		local lowerFilter = string.lower(filterText or "")
+
+		for _, child in ipairs(obj:GetChildren()) do
+			local className = child.ClassName
+			local name = child.Name
+			local full = className .. " " .. name
+			if lowerFilter == "" or string.find(string.lower(full), lowerFilter, 1, true) then
+				local button = Instance.new("TextButton")
+				button.Size = UDim2.new(1, -10, 0, 28)
+				button.Text = "[ " .. className .. " ] " .. name
+				button.TextColor3 = green
+				button.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+				button.Font = Enum.Font.Code
+				button.TextSize = 18
+				button.AutoButtonColor = false
+				button.Parent = scroll
+
+				button.MouseEnter:Connect(function()
+					button.BackgroundColor3 = hover
+				end)
+				button.MouseLeave:Connect(function()
+					button.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+				end)
+
+				button.MouseButton1Click:Connect(function()
+					table.insert(navStack, function() showObjectContents(obj, label) end)
+					if #child:GetChildren() > 0 then
+						showObjectContents(child, child.Name)
+					else
+						showProperties(child)
+					end
+				end)
+			end
+		end
 	end
+
+	-- Inicializar con todos los objetos
+	refreshList("")
+
+	-- Actualizar al escribir
+	searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+		refreshList(searchBox.Text)
+	end)
 end
+
 
 local function stopGlobalListener()
 	-- Desconectar todos
@@ -325,13 +368,16 @@ local function startGlobalListener()
 
 	-- Botón para regresar
 	local backBtn = Instance.new("TextButton")
-	backBtn.Size = UDim2.new(1, 0, 0, 30)
-	backBtn.Text = "< Regresar"
+	backBtn.Size = UDim2.new(0, 30, 0, 30)
+	backBtn.Position = UDim2.new(1, -35, 0, 5)
+	backBtn.Text = "←"
 	backBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 	backBtn.TextColor3 = green
 	backBtn.Font = Enum.Font.Code
 	backBtn.TextSize = 18
+	backBtn.ZIndex = 2
 	backBtn.Parent = contentFrame
+
 	backBtn.MouseButton1Click:Connect(function()
 		stopGlobalListener()
 		if #navStack > 0 then
@@ -404,13 +450,16 @@ local function showGlobalListenerToggle()
 	clearContent()
 
 	local backBtn = Instance.new("TextButton")
-	backBtn.Size = UDim2.new(1, 0, 0, 30)
-	backBtn.Text = "< Regresar"
+	backBtn.Size = UDim2.new(0, 30, 0, 30)
+	backBtn.Position = UDim2.new(1, -35, 0, 5)
+	backBtn.Text = "←"
 	backBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 	backBtn.TextColor3 = green
 	backBtn.Font = Enum.Font.Code
 	backBtn.TextSize = 18
+	backBtn.ZIndex = 2
 	backBtn.Parent = contentFrame
+
 	backBtn.MouseButton1Click:Connect(function()
 		if globalListenerActive then
 			stopGlobalListener()
