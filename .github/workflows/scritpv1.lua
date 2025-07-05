@@ -37,7 +37,7 @@ title.Parent = frame
 -- Cerrar GUI
 local closeBtn = Instance.new("TextButton")
 closeBtn.Size = UDim2.new(0, 100, 0, 30)
-closeBtn.Position = UDim2.new(1, -110, 0, 5)
+closeBtn.Position = UDim2.new(1, -110, 0, 0)
 closeBtn.Text = "X Cerrar"
 closeBtn.Font = Enum.Font.Code
 closeBtn.TextColor3 = green
@@ -50,24 +50,13 @@ end)
 -- Contenedor principal
 local contentFrame = Instance.new("Frame")
 contentFrame.Size = UDim2.new(1, -20, 0.8, -40)
-contentFrame.Position = UDim2.new(0, 10, 0.12, 0)
+contentFrame.Position = UDim2.new(0, 10, 0.12, 30)
 contentFrame.BackgroundTransparency = 1
 contentFrame.Name = "Content"
 contentFrame.Parent = frame
 
--- Navegación stack
+-- Navegación
 local navStack = {}
-
--- Registro de listeners para RemoteEvents específicos
-local activeListeners = {}
-
--- Variables para listener global
-local globalListenerActive = false
-local globalConnections = {}
-local globalRemoteCounters = {}
-local globalDescendantConn = nil
-local globalScroll = nil
-local globalContentFrame = nil
 
 local function clearContent()
 	for _, child in pairs(contentFrame:GetChildren()) do
@@ -75,46 +64,49 @@ local function clearContent()
 	end
 end
 
-local function createScrollContainer()
+-- StackContainer para mostrar detalles
+local function createStackContainer()
 	local scroll = Instance.new("ScrollingFrame")
-	scroll.Size = UDim2.new(1, 0, 1, 0)
+	scroll.Size = UDim2.new(1, 0, 1, -40)
 	scroll.Position = UDim2.new(0, 0, 0, 0)
 	scroll.BackgroundTransparency = 1
 	scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 	scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 	scroll.ScrollBarThickness = 6
-	scroll.Name = "ScrollContainer"
+	scroll.Name = "StackContainer"
 
 	local layout = Instance.new("UIListLayout", scroll)
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
-	layout.Padding = UDim.new(0, 5)
+	layout.Padding = UDim.new(0, 4)
 
 	return scroll
 end
 
+-- Mostrar línea de texto
 local function appendLine(container, text)
 	local line = Instance.new("TextLabel")
-	line.Size = UDim2.new(1, -10, 0, 22)
+	line.Size = UDim2.new(1, -10, 0, 20)
 	line.Text = text
 	line.TextColor3 = green
 	line.BackgroundTransparency = 1
 	line.Font = Enum.Font.Code
 	line.TextSize = 18
-	line.TextXAlignment = Enum.TextXAlignment.Left
+	line.TextWrapped = true
+	line.LayoutOrder = os.time()
 	line.Parent = container
 end
 
+-- Mostrar propiedades de un objeto
 local function showProperties(obj)
 	clearContent()
 
-	local backBtn = Instance.new("TextButton")
+	local backBtn = Instance.new("TextButton", contentFrame)
 	backBtn.Size = UDim2.new(1, 0, 0, 30)
 	backBtn.Text = "< Regresar"
 	backBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 	backBtn.TextColor3 = green
 	backBtn.Font = Enum.Font.Code
 	backBtn.TextSize = 18
-	backBtn.Parent = contentFrame
 	backBtn.MouseButton1Click:Connect(function()
 		if #navStack > 0 then
 			local last = table.remove(navStack)
@@ -122,147 +114,48 @@ local function showProperties(obj)
 		end
 	end)
 
-	local scroll = createScrollContainer()
-	scroll.Parent = contentFrame
+	local container = createStackContainer()
+	container.Position = UDim2.new(0, 0, 0, 35)
+	container.Size = UDim2.new(1, 0, 1, -35)
+	container.Parent = contentFrame
 
-	appendLine(scroll, "[ Propiedades de: " .. obj.Name .. " ]")
+	local props = {
+		"Name", "ClassName", "Parent", "Archivable",
+		"IsA", "IsDescendantOf"
+	}
 
-	local props = {"Name", "ClassName", "Parent", "Archivable"}
+	appendLine(container, "[ Propiedades de: " .. obj.Name .. " ]")
 
 	for _, prop in pairs(props) do
 		local success, value = pcall(function()
 			local val = obj[prop]
 			if typeof(val) == "Instance" then
-				return val:GetFullName()
+				return val.Name
 			elseif typeof(val) == "function" then
 				return "[función]"
 			else
 				return tostring(val)
 			end
 		end)
-		appendLine(scroll, prop .. ": " .. (success and tostring(value) or "[no accesible]"))
-	end
-
-	if obj:IsA("RemoteEvent") then
-		appendLine(scroll, "== RemoteEvent: Escuchando OnClientEvent ==")
-
-		local counter = 0
-		local argsExampleShown = false
-		local counterLabel = Instance.new("TextLabel")
-		counterLabel.Size = UDim2.new(1, -10, 0, 22)
-		counterLabel.TextColor3 = green
-		counterLabel.Font = Enum.Font.Code
-		counterLabel.BackgroundTransparency = 1
-		counterLabel.TextSize = 18
-		counterLabel.TextXAlignment = Enum.TextXAlignment.Left
-		counterLabel.LayoutOrder = 999
-		counterLabel.Text = "Llamadas recibidas: 0"
-		counterLabel.Parent = scroll
-
-		if activeListeners[obj] then
-			appendLine(scroll, "[Ya escuchando este RemoteEvent]")
+		if success then
+			appendLine(container, prop .. ": " .. tostring(value))
 		else
-			local connection = obj.OnClientEvent:Connect(function(...)
-				counter += 1
-				counterLabel.Text = "Llamadas recibidas: " .. counter
-				if not argsExampleShown then
-					appendLine(scroll, "--- Primera llamada ---")
-					local args = {...}
-					for i, arg in ipairs(args) do
-						local val = typeof(arg) == "Instance" and arg:GetFullName() or tostring(arg)
-						appendLine(scroll, "Arg[" .. i .. "]: " .. val)
-					end
-					argsExampleShown = true
-				end
-			end)
-			activeListeners[obj] = connection
+			appendLine(container, prop .. ": [no accesible]")
 		end
-
-		-- Panel para enviar llamada
-		local sendFrame = Instance.new("Frame")
-		sendFrame.Size = UDim2.new(1, 0, 0, 80)
-		sendFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-		sendFrame.BorderSizePixel = 0
-		sendFrame.Position = UDim2.new(0, 0, 1, 5)
-		sendFrame.Parent = scroll
-
-		local infoLabel = Instance.new("TextLabel")
-		infoLabel.Text = "Enviar llamada (args separados por coma):"
-		infoLabel.Size = UDim2.new(1, -10, 0, 20)
-		infoLabel.Position = UDim2.new(0, 5, 0, 5)
-		infoLabel.BackgroundTransparency = 1
-		infoLabel.TextColor3 = green
-		infoLabel.Font = Enum.Font.Code
-		infoLabel.TextSize = 16
-		infoLabel.TextXAlignment = Enum.TextXAlignment.Left
-		infoLabel.Parent = sendFrame
-
-		local inputBox = Instance.new("TextBox")
-		inputBox.PlaceholderText = 'ej: 123, "hola", true'
-		inputBox.Size = UDim2.new(1, -10, 0, 30)
-		inputBox.Position = UDim2.new(0, 5, 0, 30)
-		inputBox.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-		inputBox.TextColor3 = green
-		inputBox.Font = Enum.Font.Code
-		inputBox.TextSize = 18
-		inputBox.ClearTextOnFocus = false
-		inputBox.Parent = sendFrame
-
-		local sendBtn = Instance.new("TextButton")
-		sendBtn.Text = "Enviar llamada"
-		sendBtn.Size = UDim2.new(0, 140, 0, 30)
-		sendBtn.Position = UDim2.new(1, -145, 0, 35)
-		sendBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
-		sendBtn.TextColor3 = Color3.fromRGB(0, 0, 0)
-		sendBtn.Font = Enum.Font.Code
-		sendBtn.TextSize = 18
-		sendBtn.Parent = sendFrame
-
-		local function parseArgs(text)
-			local args = {}
-			local luaChunk = "return {" .. text .. "}"
-			local func, err = loadstring(luaChunk)
-			if func then
-				local ok, result = pcall(func)
-				if ok and type(result) == "table" then
-					args = result
-				else
-					warn("Error ejecutando argumentos:", result)
-				end
-			else
-				warn("Error parseando argumentos:", err)
-			end
-			return args
-		end
-
-		sendBtn.MouseButton1Click:Connect(function()
-			local argsText = inputBox.Text
-			if argsText == "" then
-				warn("No se han ingresado argumentos.")
-				return
-			end
-			local args = parseArgs(argsText)
-			if #args == 0 then
-				warn("No se pudieron parsear argumentos.")
-				return
-			end
-			obj:FireServer(unpack(args))
-			appendLine(scroll, "[ Llamada enviada con " .. #args .. " argumento(s) ]")
-		end)
 	end
 end
 
+-- Mostrar contenido de una carpeta o servicio
 local function showObjectContents(obj, label)
 	clearContent()
-
-	local backBtn = Instance.new("TextButton")
+	
+	local backBtn = Instance.new("TextButton", contentFrame)
 	backBtn.Size = UDim2.new(1, 0, 0, 30)
 	backBtn.Text = "< Regresar"
 	backBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 	backBtn.TextColor3 = green
 	backBtn.Font = Enum.Font.Code
 	backBtn.TextSize = 18
-	backBtn.Parent = contentFrame
 	backBtn.MouseButton1Click:Connect(function()
 		if #navStack > 0 then
 			local last = table.remove(navStack)
@@ -270,8 +163,18 @@ local function showObjectContents(obj, label)
 		end
 	end)
 
-	local scroll = createScrollContainer()
-	scroll.Parent = contentFrame
+	local scroll = Instance.new("ScrollingFrame", contentFrame)
+	scroll.Size = UDim2.new(1, 0, 1, -35)
+	scroll.Position = UDim2.new(0, 0, 0, 35)
+	scroll.BackgroundTransparency = 1
+	scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+	scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	scroll.ScrollBarThickness = 6
+	scroll.Name = "StackContainer"
+
+	local layout = Instance.new("UIListLayout", scroll)
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Padding = UDim.new(0, 5)
 
 	for _, child in ipairs(obj:GetChildren()) do
 		local button = Instance.new("TextButton")
@@ -281,8 +184,8 @@ local function showObjectContents(obj, label)
 		button.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 		button.Font = Enum.Font.Code
 		button.TextSize = 18
-		button.AutoButtonColor = false
 		button.Parent = scroll
+		button.AutoButtonColor = false
 
 		button.MouseEnter:Connect(function()
 			button.BackgroundColor3 = hover
@@ -292,6 +195,7 @@ local function showObjectContents(obj, label)
 		end)
 
 		button.MouseButton1Click:Connect(function()
+			-- Push función actual al stack antes de navegar
 			table.insert(navStack, function() showObjectContents(obj, label) end)
 			if #child:GetChildren() > 0 then
 				showObjectContents(child, child.Name)
@@ -299,215 +203,369 @@ local function showObjectContents(obj, label)
 				showProperties(child)
 			end
 		end)
+
+		-- Si es RemoteEvent, agregar opción para llamarlo
+		if child:IsA("RemoteEvent") then
+			local callBtn = Instance.new("TextButton")
+			callBtn.Size = UDim2.new(0, 70, 0, 20)
+			callBtn.Position = UDim2.new(1, -80, 0, 4)
+			callBtn.Text = "Call"
+			callBtn.Font = Enum.Font.Code
+			callBtn.TextSize = 14
+			callBtn.BackgroundColor3 = Color3.fromRGB(0, 100, 0)
+			callBtn.TextColor3 = green
+			callBtn.Parent = button
+			callBtn.AutoButtonColor = false
+
+			callBtn.MouseEnter:Connect(function()
+				callBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
+			end)
+			callBtn.MouseLeave:Connect(function()
+				callBtn.BackgroundColor3 = Color3.fromRGB(0, 100, 0)
+			end)
+
+			callBtn.MouseButton1Click:Connect(function()
+				-- Llamar el RemoteEvent sin parámetros (puedes modificar para pedir args)
+				child:FireServer()
+			end)
+		end
 	end
 end
 
-local function stopGlobalListener()
-	-- Desconectar todos
-	for _, conn in pairs(globalConnections) do
+-- Variables y funciones para el listener global
+local listening = false
+local remoteCallsCount = {}
+local remoteConnections = {}
+local listenerContainer
+
+local function disconnectAllRemotes()
+	for _, conn in pairs(remoteConnections) do
 		conn:Disconnect()
 	end
-	globalConnections = {}
-	globalRemoteCounters = {}
-	if globalDescendantConn then
-		globalDescendantConn:Disconnect()
-		globalDescendantConn = nil
-	end
-	globalListenerActive = false
-	globalScroll = nil
-	globalContentFrame = nil
+	remoteConnections = {}
 end
 
+local function updateRemoteCounter(remote, scroll, navStack)
+
+	local name = remote:GetFullName()
+	remoteCallsCount[remote] = remoteCallsCount[remote] or 0
+	local count = remoteCallsCount[remote]
+
+	-- Buscar si ya existe el label en scroll
+	local counterData = scroll:FindFirstChild(remote.Name)
+	if counterData then
+		counterData.Text = string.format("[%d] %s", count, name)
+		return
+	end
+
+	-- Crear nuevo botón para RemoteEvent
+	local label = Instance.new("TextButton")
+	label.Name = remote.Name
+	label.Size = UDim2.new(1, -10, 0, 22)
+	label.TextColor3 = green
+	label.Font = Enum.Font.Code
+	label.BackgroundTransparency = 1
+	label.TextSize = 18
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Text = string.format("[%d] %s", count, name)
+	label.AutoButtonColor = false
+	label.Parent = scroll
+
+	label.MouseEnter:Connect(function()
+		label.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+	end)
+	label.MouseLeave:Connect(function()
+		label.BackgroundTransparency = 1
+	end)
+
+	label.MouseButton1Click:Connect(function()
+		-- Mostrar info detallada del RemoteEvent
+		table.insert(navStack, function()
+			-- Regresar al listener mostrando el scroll actualizado
+			showGlobalListenerToggle()
+		end)
+		showProperties(remote)
+	end)
+end
+
+-- Escuchar RemoteEvents y actualizar contador
 local function startGlobalListener()
-	if globalListenerActive then return end
-	globalListenerActive = true
 	clearContent()
 
-	-- Botón para regresar
-	local backBtn = Instance.new("TextButton")
+	local backBtn = Instance.new("TextButton", contentFrame)
 	backBtn.Size = UDim2.new(1, 0, 0, 30)
 	backBtn.Text = "< Regresar"
 	backBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 	backBtn.TextColor3 = green
 	backBtn.Font = Enum.Font.Code
 	backBtn.TextSize = 18
-	backBtn.Parent = contentFrame
 	backBtn.MouseButton1Click:Connect(function()
-		stopGlobalListener()
 		if #navStack > 0 then
 			local last = table.remove(navStack)
 			last()
 		end
 	end)
 
-	-- Scroll para mostrar info
-	local scroll = createScrollContainer()
-	scroll.Parent = contentFrame
-	globalScroll = scroll
+	-- Contenedor para el listener
+	listenerContainer = Instance.new("Frame", contentFrame)
+	listenerContainer.Size = UDim2.new(1, 0, 1, -40)
+	listenerContainer.Position = UDim2.new(0, 0, 0, 35)
+	listenerContainer.BackgroundColor3 = Color3.fromRGB(30,30,30)
+	listenerContainer.BorderSizePixel = 0
 
-	local infoLabel = Instance.new("TextLabel")
-	infoLabel.Text = "Listener Global: RemoteEvents detectados y llamadas"
-	infoLabel.Size = UDim2.new(1, -10, 0, 22)
-	infoLabel.BackgroundTransparency = 1
-	infoLabel.TextColor3 = green
-	infoLabel.Font = Enum.Font.Code
-	infoLabel.TextSize = 18
-	infoLabel.TextXAlignment = Enum.TextXAlignment.Left
-	infoLabel.Parent = scroll
+	local filterLabels = {
+		{Text = "Sin llamadas (0)", Filter = function(c) return c == 0 end},
+		{Text = "Llamadas 1-10", Filter = function(c) return c > 0 and c <= 10 end},
+		{Text = "Llamadas > 10", Filter = function(c) return c > 10 end},
+	}
 
-	-- Función para crear o actualizar contador
-	local function updateRemoteCounter(remote)
-		local key = remote:GetDebugId()
-		local name = remote:GetFullName()
+	local selectedFilter = 1
 
-		if not globalRemoteCounters[remote] then
-			-- Nuevo contador
-			local counterData = {
-				count = 0,
-				label = Instance.new("TextLabel"),
-			}
-			counterData.label.Size = UDim2.new(1, -10, 0, 22)
-			counterData.label.TextColor3 = green
-			counterData.label.Font = Enum.Font.Code
-			counterData.label.BackgroundTransparency = 1
-			counterData.label.TextSize = 18
-			counterData.label.TextXAlignment = Enum.TextXAlignment.Left
-			counterData.label.Text = "[0] " .. name
-			counterData.label.Parent = scroll
-			globalRemoteCounters[remote] = counterData
+	local filterButtons = {}
 
-			-- Conectar evento OnClientEvent
-			local conn = remote.OnClientEvent:Connect(function(...)
-				counterData.count += 1
-				counterData.label.Text = "[" .. counterData.count .. "] " .. name
-			end)
-			table.insert(globalConnections, conn)
+	local filterFrame = Instance.new("Frame", listenerContainer)
+	filterFrame.Size = UDim2.new(1, 0, 0, 35)
+	filterFrame.BackgroundTransparency = 1
+
+	for i, fdata in ipairs(filterLabels) do
+		local fb = Instance.new("TextButton", filterFrame)
+		fb.Size = UDim2.new(0, 120, 1, 0)
+		fb.Position = UDim2.new((i-1)*0.33, 0, 0, 0)
+		fb.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+		fb.TextColor3 = green
+		fb.Font = Enum.Font.Code
+		fb.TextSize = 18
+		fb.Text = fdata.Text
+		fb.AutoButtonColor = false
+
+		if i == selectedFilter then
+			fb.BackgroundColor3 = hover
+		end
+
+		fb.MouseEnter:Connect(function()
+			fb.BackgroundColor3 = hover
+		end)
+		fb.MouseLeave:Connect(function()
+			if i ~= selectedFilter then
+				fb.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+			end
+		end)
+
+		fb.MouseButton1Click:Connect(function()
+			selectedFilter = i
+			for _, btn in pairs(filterButtons) do
+				btn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+			end
+			fb.BackgroundColor3 = hover
+			refreshListenerScroll()
+		end)
+
+		filterButtons[i] = fb
+	end
+
+	local scroll = Instance.new("ScrollingFrame", listenerContainer)
+	scroll.Size = UDim2.new(1, 0, 1, -35)
+	scroll.Position = UDim2.new(0, 0, 0, 35)
+	scroll.BackgroundTransparency = 1
+	scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+	scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	scroll.ScrollBarThickness = 6
+	scroll.Name = "ListenerScroll"
+
+	local layout = Instance.new("UIListLayout", scroll)
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Padding = UDim.new(0, 4)
+
+	local function refreshListenerScroll()
+		scroll:ClearAllChildren()
+		for remote, count in pairs(remoteCallsCount) do
+			local passesFilter = false
+			if selectedFilter == 1 then
+				passesFilter = (count == 0)
+			elseif selectedFilter == 2 then
+				passesFilter = (count > 0 and count <= 10)
+			else
+				passesFilter = (count > 10)
+			end
+			if passesFilter then
+				local name = remote:GetFullName()
+				local label = Instance.new("TextButton")
+				label.Size = UDim2.new(1, -10, 0, 22)
+				label.TextColor3 = green
+				label.Font = Enum.Font.Code
+				label.BackgroundTransparency = 1
+				label.TextSize = 18
+				label.TextXAlignment = Enum.TextXAlignment.Left
+				label.Text = string.format("[%d] %s", count, name)
+				label.AutoButtonColor = false
+				label.Parent = scroll
+
+				label.MouseEnter:Connect(function()
+					label.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+				end)
+				label.MouseLeave:Connect(function()
+					label.BackgroundTransparency = 1
+				end)
+
+				label.MouseButton1Click:Connect(function()
+					table.insert(navStack, function()
+						showGlobalListenerToggle()
+					end)
+					showProperties(remote)
+				end)
+			end
 		end
 	end
 
-	-- Detectar remotes ya existentes
-	for _, inst in pairs(game:GetDescendants()) do
-		if inst:IsA("RemoteEvent") then
-			updateRemoteCounter(inst)
-		end
+	-- Detectar RemoteEvents actuales y futuros
+	local function listenToRemote(remote)
+		if remoteConnections[remote] then return end -- Ya conectado
+
+		remoteCallsCount[remote] = 0
+
+		local conn = remote.OnServerEvent:Connect(function()
+			remoteCallsCount[remote] = remoteCallsCount[remote] + 1
+			refreshListenerScroll()
+		end)
+		remoteConnections[remote] = conn
 	end
 
-	-- Escuchar nuevos remotes agregados
-	globalDescendantConn = game.DescendantAdded:Connect(function(inst)
-		if inst:IsA("RemoteEvent") then
-			updateRemoteCounter(inst)
+	-- Inicializar escuchas
+	local function initListener()
+		-- Limpiar conexiones previas
+		disconnectAllRemotes()
+		remoteCallsCount = {}
+
+		-- Buscar RemoteEvents en todo el juego (puedes agregar servicios extra si quieres)
+		local function scanForRemotes(obj)
+			for _, child in pairs(obj:GetChildren()) do
+				if child:IsA("RemoteEvent") then
+					listenToRemote(child)
+				end
+				scanForRemotes(child)
+			end
 		end
-	end)
+		scanForRemotes(game)
+
+		-- Detectar RemoteEvents añadidos después
+		game.DescendantAdded:Connect(function(desc)
+			if desc:IsA("RemoteEvent") then
+				listenToRemote(desc)
+				refreshListenerScroll()
+			end
+		end)
+		refreshListenerScroll()
+	end
+
+	initListener()
 end
 
 local function showGlobalListenerToggle()
 	clearContent()
 
-	local backBtn = Instance.new("TextButton")
+	local backBtn = Instance.new("TextButton", contentFrame)
 	backBtn.Size = UDim2.new(1, 0, 0, 30)
 	backBtn.Text = "< Regresar"
 	backBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 	backBtn.TextColor3 = green
 	backBtn.Font = Enum.Font.Code
 	backBtn.TextSize = 18
-	backBtn.Parent = contentFrame
 	backBtn.MouseButton1Click:Connect(function()
-		if globalListenerActive then
-			stopGlobalListener()
-		end
 		if #navStack > 0 then
 			local last = table.remove(navStack)
 			last()
 		end
 	end)
 
-	local toggleBtn = Instance.new("TextButton")
-	toggleBtn.Size = UDim2.new(0, 200, 0, 40)
-	toggleBtn.Position = UDim2.new(0.5, -100, 0.5, -20)
-	toggleBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+	local toggleBtn = Instance.new("TextButton", contentFrame)
+	toggleBtn.Size = UDim2.new(1, 0, 0, 40)
+	toggleBtn.Position = UDim2.new(0, 0, 0, 35)
 	toggleBtn.TextColor3 = green
 	toggleBtn.Font = Enum.Font.Code
 	toggleBtn.TextSize = 20
-	toggleBtn.Text = globalListenerActive and "Desactivar Listener Global" or "Activar Listener Global"
-	toggleBtn.Parent = contentFrame
+	toggleBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+	toggleBtn.AutoButtonColor = false
 
-	toggleBtn.MouseEnter:Connect(function()
-		toggleBtn.BackgroundColor3 = hover
-	end)
-	toggleBtn.MouseLeave:Connect(function()
-		toggleBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-	end)
+	local statusLabel = Instance.new("TextLabel", toggleBtn)
+	statusLabel.Size = UDim2.new(0.5, 0, 1, 0)
+	statusLabel.Position = UDim2.new(0, 10, 0, 0)
+	statusLabel.BackgroundTransparency = 1
+	statusLabel.Font = Enum.Font.Code
+	statusLabel.TextSize = 20
+	statusLabel.TextColor3 = green
+	statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+	local listenerActive = false
+
+	local function updateStatus()
+		statusLabel.Text = "Listener Global: " .. (listenerActive and "ON" or "OFF")
+		toggleBtn.BackgroundColor3 = listenerActive and Color3.fromRGB(0, 70, 0) or Color3.fromRGB(40, 10, 10)
+	end
+
+	updateStatus()
 
 	toggleBtn.MouseButton1Click:Connect(function()
-		if globalListenerActive then
-			stopGlobalListener()
-			toggleBtn.Text = "Activar Listener Global"
-		else
+		listenerActive = not listenerActive
+		updateStatus()
+
+		if listenerActive then
 			startGlobalListener()
-			toggleBtn.Text = "Desactivar Listener Global"
+		else
+			disconnectAllRemotes()
+			clearContent()
+			appendLine(contentFrame, "Listener Global detenido.")
 		end
 	end)
 end
 
+-- Mostrar menú principal
 local function showMainMenu()
 	clearContent()
-	navStack = {}
 
-	local services = {
-		{label = "Workspace", ref = workspace},
-		{label = "ReplicatedStorage", ref = game:GetService("ReplicatedStorage")},
-		{label = "Players", ref = game:GetService("Players")},
-		{label = "StarterPack", ref = game:GetService("StarterPack")},
-		{label = "Lighting", ref = game:GetService("Lighting")},
-		{label = "ServerScriptService", ref = game:GetService("ServerScriptService")},
+	local titleLabel = Instance.new("TextLabel", contentFrame)
+	titleLabel.Size = UDim2.new(1, 0, 0, 40)
+	titleLabel.Text = "MENU PRINCIPAL"
+	titleLabel.TextColor3 = green
+	titleLabel.BackgroundTransparency = 1
+	titleLabel.Font = Enum.Font.Code
+	titleLabel.TextSize = 28
+
+	local buttonsData = {
+		{Name = "Explorer", Func = function()
+			table.insert(navStack, showMainMenu)
+			showObjectContents(game, "Game")
+		end},
+		{Name = "Listener Global RemoteEvents", Func = function()
+			table.insert(navStack, showMainMenu)
+			showGlobalListenerToggle()
+		end},
 	}
 
-	for i, svc in ipairs(services) do
-		local button = Instance.new("TextButton")
-		button.Size = UDim2.new(1, -20, 0, 35)
-		button.Position = UDim2.new(0, 10, 0, (i - 1) * 40)
-		button.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-		button.TextColor3 = green
-		button.Text = "[ " .. i .. " ] " .. svc.label
-		button.Font = Enum.Font.Code
-		button.TextSize = 20
-		button.Parent = contentFrame
+	local layout = Instance.new("UIListLayout", contentFrame)
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Padding = UDim.new(0, 15)
 
-		button.MouseEnter:Connect(function()
-			button.BackgroundColor3 = hover
+	for i, btnData in ipairs(buttonsData) do
+		local btn = Instance.new("TextButton", contentFrame)
+		btn.Size = UDim2.new(1, -20, 0, 40)
+		btn.Position = UDim2.new(0, 10, 0, 50 + (i-1)*50)
+		btn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+		btn.TextColor3 = green
+		btn.Font = Enum.Font.Code
+		btn.TextSize = 22
+		btn.Text = btnData.Name
+		btn.AutoButtonColor = false
+
+		btn.MouseEnter:Connect(function()
+			btn.BackgroundColor3 = hover
 		end)
-		button.MouseLeave:Connect(function()
-			button.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+		btn.MouseLeave:Connect(function()
+			btn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 		end)
 
-		button.MouseButton1Click:Connect(function()
-			table.insert(navStack, showMainMenu)
-			showObjectContents(svc.ref, svc.label)
-		end)
+		btn.MouseButton1Click:Connect(btnData.Func)
 	end
-
-	-- Botón para listener global
-	local listenerBtn = Instance.new("TextButton")
-	listenerBtn.Size = UDim2.new(1, -20, 0, 35)
-	listenerBtn.Position = UDim2.new(0, 10, 0, #services * 40 + 10)
-	listenerBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-	listenerBtn.TextColor3 = green
-	listenerBtn.Text = "[*] Listener Global Remotes"
-	listenerBtn.Font = Enum.Font.Code
-	listenerBtn.TextSize = 20
-	listenerBtn.Parent = contentFrame
-
-	listenerBtn.MouseEnter:Connect(function()
-		listenerBtn.BackgroundColor3 = hover
-	end)
-	listenerBtn.MouseLeave:Connect(function()
-		listenerBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-	end)
-
-	listenerBtn.MouseButton1Click:Connect(function()
-		table.insert(navStack, showMainMenu)
-		showGlobalListenerToggle()
-	end)
 end
 
+-- Iniciar menú
 showMainMenu()
