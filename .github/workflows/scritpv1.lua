@@ -345,22 +345,6 @@ local function showObjectContents(obj, label)
 end
 
 
-local function stopGlobalListener()
-	-- Desconectar todos
-	for _, conn in pairs(globalConnections) do
-		conn:Disconnect()
-	end
-	globalConnections = {}
-	globalRemoteCounters = {}
-	if globalDescendantConn then
-		globalDescendantConn:Disconnect()
-		globalDescendantConn = nil
-	end
-	globalListenerActive = false
-	globalScroll = nil
-	globalContentFrame = nil
-end
-
 local function startGlobalListener()
 	if globalListenerActive then return end
 	globalListenerActive = true
@@ -375,7 +359,7 @@ local function startGlobalListener()
 	backBtn.TextColor3 = green
 	backBtn.Font = Enum.Font.Code
 	backBtn.TextSize = 18
-	backBtn.ZIndex = 2
+	backBtn.ZIndex = 3
 	backBtn.Parent = contentFrame
 
 	backBtn.MouseButton1Click:Connect(function()
@@ -386,14 +370,71 @@ local function startGlobalListener()
 		end
 	end)
 
+	-- 🔍 Barra de búsqueda
+	local searchBox = Instance.new("TextBox")
+	searchBox.Size = UDim2.new(1, -20, 0, 30)
+	searchBox.Position = UDim2.new(0, 10, 0, 40)
+	searchBox.PlaceholderText = "Buscar RemoteEvents por nombre..."
+	searchBox.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+	searchBox.TextColor3 = green
+	searchBox.Font = Enum.Font.Code
+	searchBox.TextSize = 18
+	searchBox.ZIndex = 2
+	searchBox.ClearTextOnFocus = false
+	searchBox.Parent = contentFrame
+
 	-- Scroll para mostrar info
 	local scroll = createScrollContainer()
+	scroll.Position = UDim2.new(0, 10, 0, 80)
+	scroll.Size = UDim2.new(1, -20, 1, -90)
 	scroll.Parent = contentFrame
 	globalScroll = scroll
 
+	-- Función para ordenar y mostrar RemoteEvents
+	local function refreshDisplay()
+		local remotesArray = {}
+		for remote, data in pairs(globalRemoteCounters) do
+			table.insert(remotesArray, {
+				remote = remote,
+				count = data.count,
+				label = data.label
+			})
+		end
+
+		-- Ordenar de mayor a menor por cantidad de llamadas
+		table.sort(remotesArray, function(a, b)
+			return a.count > b.count
+		end)
+
+		-- Reorganizar en el UI
+		for order, data in ipairs(remotesArray) do
+			data.label.LayoutOrder = order
+		end
+	end
+
+	-- Función para filtrar RemoteEvents
+	local function filterRemotes(filterText)
+		for remote, counterData in pairs(globalRemoteCounters) do
+			local visible = true
+			if filterText ~= "" then
+				local remoteName = remote:GetFullName():lower()
+				visible = remoteName:find(filterText:lower(), 1, true) ~= nil
+			end
+			counterData.label.Visible = visible
+		end
+		refreshDisplay() -- Reordenar después de filtrar
+	end
+
+	-- Actualizar filtro al escribir
+	searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+		filterRemotes(searchBox.Text)
+	end)
+
+	-- Info label
 	local infoLabel = Instance.new("TextLabel")
-	infoLabel.Text = "Listener Global: RemoteEvents detectados y llamadas"
+	infoLabel.Text = "Listener Global - RemoteEvents (0 detectados)"
 	infoLabel.Size = UDim2.new(1, -10, 0, 22)
+	infoLabel.Position = UDim2.new(0, 0, 0, 0)
 	infoLabel.BackgroundTransparency = 1
 	infoLabel.TextColor3 = green
 	infoLabel.Font = Enum.Font.Code
@@ -401,32 +442,202 @@ local function startGlobalListener()
 	infoLabel.TextXAlignment = Enum.TextXAlignment.Left
 	infoLabel.Parent = scroll
 
-	-- Función para crear o actualizar contador
+	local function createDetailFrame(remote, count, callHistory)
+		-- Frame principal
+		local detailFrame = Instance.new("Frame")
+		detailFrame.Size = UDim2.new(1, -20, 0, 200)
+		detailFrame.Position = UDim2.new(0, 10, 0, 0)
+		detailFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+		detailFrame.BorderSizePixel = 0
+		detailFrame.ZIndex = 3
+		detailFrame.Name = "DetailFrame"
+
+		-- Título
+		local title = Instance.new("TextLabel")
+		title.Text = "Detalles: "..remote:GetFullName()
+		title.Size = UDim2.new(1, 0, 0, 30)
+		title.BackgroundTransparency = 1
+		title.TextColor3 = green
+		title.Font = Enum.Font.Code
+		title.TextSize = 18
+		title.TextXAlignment = Enum.TextXAlignment.Left
+		title.Parent = detailFrame
+
+		-- Información básica
+		local infoText = string.format(
+			"Llamadas totales: %d\nClase: %s\nRuta: %s",
+			count,
+			remote.ClassName,
+			remote:GetFullName()
+		)
+
+		local infoLabel = Instance.new("TextLabel")
+		infoLabel.Text = infoText
+		infoLabel.Size = UDim2.new(1, -10, 0, 60)
+		infoLabel.Position = UDim2.new(0, 5, 0, 30)
+		infoLabel.BackgroundTransparency = 1
+		infoLabel.TextColor3 = green
+		infoLabel.Font = Enum.Font.Code
+		infoLabel.TextSize = 16
+		infoLabel.TextXAlignment = Enum.TextXAlignment.Left
+		infoLabel.TextYAlignment = Enum.TextYAlignment.Top
+		infoLabel.Parent = detailFrame
+
+		-- Historial de llamadas (scroll)
+		local scrollFrame = Instance.new("ScrollingFrame")
+		scrollFrame.Size = UDim2.new(1, -10, 0, 100)
+		scrollFrame.Position = UDim2.new(0, 5, 0, 95)
+		scrollFrame.BackgroundTransparency = 1
+		scrollFrame.ScrollBarThickness = 6
+		scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+		scrollFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+		scrollFrame.Parent = detailFrame
+
+		local layout = Instance.new("UIListLayout")
+		layout.Padding = UDim.new(0, 5)
+		layout.Parent = scrollFrame
+
+		-- Llenar historial
+		if #callHistory > 0 then
+			for i, call in ipairs(callHistory) do
+				local callText = string.format(
+					"Llamada #%d: %d args (hace %d seg)",
+					i, #call.args, os.time() - call.time
+				)
+
+				local callLabel = Instance.new("TextLabel")
+				callLabel.Text = callText
+				callLabel.Size = UDim2.new(1, 0, 0, 20)
+				callLabel.BackgroundTransparency = 1
+				callLabel.TextColor3 = green
+				callLabel.Font = Enum.Font.Code
+				callLabel.TextSize = 14
+				callLabel.TextXAlignment = Enum.TextXAlignment.Left
+				callLabel.Parent = scrollFrame
+			end
+		else
+			local noHistory = Instance.new("TextLabel")
+			noHistory.Text = "No hay historial de llamadas"
+			noHistory.Size = UDim2.new(1, 0, 0, 20)
+			noHistory.BackgroundTransparency = 1
+			noHistory.TextColor3 = Color3.fromRGB(150, 150, 150)
+			noHistory.Font = Enum.Font.Code
+			noHistory.TextSize = 14
+			noHistory.Parent = scrollFrame
+		end
+
+		-- Botón para cerrar
+		local closeBtn = Instance.new("TextButton")
+		closeBtn.Text = "Cerrar"
+		closeBtn.Size = UDim2.new(0, 80, 0, 25)
+		closeBtn.Position = UDim2.new(1, -85, 1, -30)
+		closeBtn.BackgroundColor3 = Color3.fromRGB(60, 0, 0)
+		closeBtn.TextColor3 = green
+		closeBtn.Font = Enum.Font.Code
+		closeBtn.TextSize = 16
+		closeBtn.Parent = detailFrame
+
+		closeBtn.MouseButton1Click:Connect(function()
+			detailFrame:Destroy()
+		end)
+
+		return detailFrame
+	end
+
+	-- Modificación en updateRemoteCounter:
 	local function updateRemoteCounter(remote)
-		local key = remote:GetDebugId()
 		local name = remote:GetFullName()
+		local callHistory = {}
 
 		if not globalRemoteCounters[remote] then
-			-- Nuevo contador
+			-- Crear botón principal
+			local remoteButton = Instance.new("TextButton")
+			remoteButton.Size = UDim2.new(1, -10, 0, 28)
+			remoteButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+			remoteButton.AutoButtonColor = false
+			remoteButton.Text = ""
+			remoteButton.ZIndex = 2
+			remoteButton.LayoutOrder = #globalScroll:GetChildren() + 1
+			remoteButton.Parent = globalScroll
+
+			-- Label para mostrar la info
+			local label = Instance.new("TextLabel")
+			label.Size = UDim2.new(1, 0, 1, 0)
+			label.BackgroundTransparency = 1
+			label.TextColor3 = green
+			label.Font = Enum.Font.Code
+			label.TextSize = 18
+			label.TextXAlignment = Enum.TextXAlignment.Left
+			label.Text = "[0] " .. name
+			label.ZIndex = 3
+			label.Parent = remoteButton
+
+			-- Configurar datos
 			local counterData = {
 				count = 0,
-				label = Instance.new("TextLabel"),
+				button = remoteButton,
+				label = label,
+				history = callHistory,
+				visible = true,
+				baseLayoutOrder = remoteButton.LayoutOrder
 			}
-			counterData.label.Size = UDim2.new(1, -10, 0, 22)
-			counterData.label.TextColor3 = green
-			counterData.label.Font = Enum.Font.Code
-			counterData.label.BackgroundTransparency = 1
-			counterData.label.TextSize = 18
-			counterData.label.TextXAlignment = Enum.TextXAlignment.Left
-			counterData.label.Text = "[0] " .. name
-			counterData.label.Parent = scroll
+
 			globalRemoteCounters[remote] = counterData
 
-			-- Conectar evento OnClientEvent
+			-- Efecto hover
+			remoteButton.MouseEnter:Connect(function()
+				remoteButton.BackgroundColor3 = hover
+			end)
+
+			remoteButton.MouseLeave:Connect(function()
+				remoteButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+			end)
+
+			-- Manejar clic
+			remoteButton.MouseButton1Click:Connect(function()
+				-- Cerrar detalles previos
+				for _, child in pairs(globalScroll:GetChildren()) do
+					if child.Name == "DetailFrame" then
+						child:Destroy()
+					end
+				end
+
+				-- Crear nuevo panel de detalles
+				local details = createDetailFrame(remote, counterData.count, callHistory)
+				details.LayoutOrder = counterData.baseLayoutOrder + 0.5 -- Insertar justo debajo
+				details.Parent = globalScroll
+
+				-- Ajustar LayoutOrder de otros elementos
+				for _, data in pairs(globalRemoteCounters) do
+					if data.baseLayoutOrder > counterData.baseLayoutOrder then
+						data.button.LayoutOrder = data.baseLayoutOrder + 1
+					end
+				end
+
+				-- Forzar actualización del scroll
+				globalScroll.CanvasSize = UDim2.new(0, 0, 0, #globalScroll:GetChildren() * 35)
+				wait()
+				globalScroll.CanvasPosition = Vector2.new(0, details.AbsolutePosition.Y - globalScroll.AbsolutePosition.Y)
+			end)
+
+			-- Conectar evento
 			local conn = remote.OnClientEvent:Connect(function(...)
 				counterData.count += 1
-				counterData.label.Text = "[" .. counterData.count .. "] " .. name
+				counterData.label.Text = "["..counterData.count.."] "..name
+
+				-- Registrar llamada
+				table.insert(callHistory, 1, {
+					args = {...},
+					time = os.time()
+				})
+
+				if #callHistory > 5 then
+					table.remove(callHistory, 6)
+				end
+
+				refreshDisplay()
 			end)
+
 			table.insert(globalConnections, conn)
 		end
 	end
